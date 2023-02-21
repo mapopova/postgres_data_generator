@@ -1,6 +1,5 @@
-CREATE OR REPLACE PROCEDURE generate_table_inc(
+CREATE OR REPLACE PROCEDURE generate_table_id_inc(
 	tab_name text, col_name text, min_num integer, max_num integer)
---RETURNS void
 LANGUAGE 'plpgsql' AS 
 $$
 BEGIN 
@@ -9,6 +8,7 @@ BEGIN
 	', tab_name, min_num, max_num, col_name);
 END
 $$;
+
 
 
 -- включительно
@@ -23,19 +23,19 @@ $$;
 
 
 
-CREATE OR REPLACE PROCEDURE generate_table_random(
-	tab_name text, col_name text, 
-	min_num integer, max_num integer, amount integer)
-LANGUAGE 'plpgsql' AS 
-$$
-BEGIN 
-	EXECUTE format('
-	CREATE TABLE %I AS 
-		SELECT random_between(%L,%L) 
-		FROM generate_series(1,%L) AS %I
-	', tab_name, min_num, max_num, amount, col_name);
-END
-$$;
+--CREATE OR REPLACE PROCEDURE generate_table_random(
+--	tab_name text, col_name text, 
+--	min_num integer, max_num integer, amount integer)
+--LANGUAGE 'plpgsql' AS 
+--$$
+--BEGIN 
+--	EXECUTE format('
+--	CREATE TABLE %I AS 
+--		SELECT random_between(%L,%L) 
+--		FROM generate_series(1,%L) AS %I
+--	', tab_name, min_num, max_num, amount, col_name);
+--END
+--$$;
 
 
 
@@ -54,7 +54,7 @@ $$;
 
 
 
-CREATE OR REPLACE PROCEDURE generate_random_unique(
+CREATE OR REPLACE PROCEDURE generate_table_id_random(
 	tab_name text, col_name text, 
 	min_num integer, max_num integer, amount integer)
 LANGUAGE 'plpgsql' AS 
@@ -155,7 +155,7 @@ $$;
 
 -- 1 : 1..N
 -- only for dim B > dim A (?)
-CREATE OR REPLACE PROCEDURE generate_one_to_many_pairs_2(
+CREATE OR REPLACE PROCEDURE generate_one_to_many_pairs_v2(
 	tab_one text, col_one text, tab_two text, col_two text,
 	tab_target text, amount integer)
 LANGUAGE 'plpgsql' AS 
@@ -166,7 +166,8 @@ BEGIN
 		INTO tab_1_size;
 	EXECUTE 'SELECT count(*) FROM ' || quote_ident(tab_two) 
 		INTO tab_2_size;
-	-- check amount = ?
+	-- to do check amount = ?
+	-- to do check dim B > dim A
 	EXECUTE 
 	'CREATE TABLE ' || quote_ident(tab_target) || ' AS 
 
