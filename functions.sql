@@ -1,11 +1,12 @@
 CREATE OR REPLACE PROCEDURE generate_table_id_inc(
-	tab_name text, col_name text, min_num integer, max_num integer)
+	tab_name text, col_name text, min_num bigint, max_num bigint)
 LANGUAGE 'plpgsql' AS 
 $$
 BEGIN 
-	EXECUTE format('
-	CREATE TABLE %I AS SELECT generate_series(%L,%L,1) AS %I
-	', tab_name, min_num, max_num, col_name);
+	EXECUTE 
+	'CREATE TABLE ' || quote_ident(tab_name) || ' AS 
+		SELECT generate_series(' || min_num || ' ,' || max_num || ' ,1)
+			    AS ' || quote_ident(col_name);
 END
 $$;
 
@@ -56,7 +57,7 @@ $$;
 
 CREATE OR REPLACE PROCEDURE generate_table_id_random(
 	tab_name text, col_name text, 
-	min_num integer, max_num integer, amount integer)
+	min_num bigint, max_num bigint, amount integer)
 LANGUAGE 'plpgsql' AS 
 $$
 BEGIN 
@@ -65,14 +66,21 @@ BEGIN
 		'Can not generate % unique numbers between % and %',
 		amount, min_num, max_num;
 	END IF;
-	EXECUTE format('
-	CREATE TABLE %I AS
-		SELECT %I
-		FROM generate_series(%L,%L,1) AS %I
+	EXECUTE
+	'CREATE TABLE ' || quote_ident(tab_name) || ' AS 
+		SELECT ' || quote_ident(col_name) || ' 
+		FROM generate_series(' || min_num || ' ,' || max_num || ' ,1)
+				AS ' || quote_ident(col_name) || ' 
 		ORDER BY random()
-		LIMIT %L
-	', tab_name, col_name, min_num, max_num,
-	   col_name, amount);
+		LIMIT ' || amount;
+--	EXECUTE format('
+--	CREATE TABLE %I AS
+--		SELECT %I
+--		FROM generate_series(%L,%L,1) AS %I
+--		ORDER BY random()
+--		LIMIT %L
+--	', tab_name, col_name, min_num, max_num,
+--	   col_name, amount);
 END
 $$;
 
@@ -208,6 +216,56 @@ BEGIN
 		WHERE id_2 NOT IN (SELECT id_2 FROM tab1))
 
 		LIMIT ' || quote_nullable(amount);
+END
+$$;
+
+
+
+CREATE OR REPLACE PROCEDURE generate_many_to_many_pairs(
+	tab_one text, col_one text, tab_two text, col_two text,
+	tab_target text, amount integer)
+LANGUAGE 'plpgsql' AS 
+$$
+DECLARE tab_1_size integer; tab_2_size integer;
+BEGIN
+	EXECUTE format('SELECT count(*) FROM %I', tab_one) 
+		INTO tab_1_size;
+	EXECUTE format('SELECT count(*) FROM %I', tab_two) 
+		INTO tab_2_size;
+	-- check that amount <= count(tab2)*count(tab1) 
+	IF amount > tab_2_size * tab_1_size
+		THEN RAISE EXCEPTION 
+		'Can not generate % unique many-to-many pairs', amount;
+	END IF;
+	EXECUTE 
+	'CREATE TABLE ' || quote_ident(tab_target) || ' AS 
+		SELECT id_1, id_2
+			FROM (
+				SELECT ' || quote_ident(col_one) || ' AS id_1,
+				random_between(1,' || quote_nullable(tab_2_size) ||') AS rn
+				FROM ' || quote_ident(tab_one) || ' 
+				ORDER BY random()
+			) x
+			JOIN (
+				SELECT ' || quote_ident(col_two) || ' AS id_2,
+				random_between(1,' || quote_nullable(tab_1_size) || ') AS rn
+				FROM ' || quote_ident(tab_two) || '  
+				ORDER BY random()
+			) y USING (rn)
+			LIMIT ' || quote_nullable(amount);
+--	CREATE TABLE quote_ident(tab_target) AS
+--		SELECT id_1, id_2
+--		FROM (
+--			SELECT quote_ident(col_one) AS id_1, random_between(1, tab_2_size) AS rn
+--			FROM quote_ident(tab_one)
+--			ORDER BY random()
+--		) x
+--		JOIN (
+--			SELECT quote_ident(col_two) AS id_2, random_between(1, tab_1_size) AS rn
+--			FROM quote_ident(tab_two) 
+--			ORDER BY random()
+--		) y USING (rn)
+--		LIMIT amount;
 END
 $$;
 
