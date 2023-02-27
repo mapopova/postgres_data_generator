@@ -73,6 +73,7 @@ BEGIN
 				AS ' || quote_ident(col_name) || ' 
 		ORDER BY random()
 		LIMIT ' || amount;
+
 --	EXECUTE format('
 --	CREATE TABLE %I AS
 --		SELECT %I
@@ -223,16 +224,19 @@ $$;
 
 CREATE OR REPLACE PROCEDURE generate_many_to_many_pairs(
 	tab_one text, col_one text, tab_two text, col_two text,
-	tab_target text, amount integer)
+	tab_target text, random_1 integer, random_2 integer, amount integer)
 LANGUAGE 'plpgsql' AS 
 $$
-DECLARE tab_1_size integer; tab_2_size integer;
+DECLARE --random_1 integer; random_2 integer;
+		tab_1_size integer; tab_2_size integer;
 BEGIN
+--	random_1 = 1000;
+--	random_2 = 1000;
 	EXECUTE format('SELECT count(*) FROM %I', tab_one) 
 		INTO tab_1_size;
 	EXECUTE format('SELECT count(*) FROM %I', tab_two) 
 		INTO tab_2_size;
-	-- check that amount <= count(tab2)*count(tab1) 
+--	 check that amount <= count(tab2)*count(tab1) 
 	IF amount > tab_2_size * tab_1_size
 		THEN RAISE EXCEPTION 
 		'Can not generate % unique many-to-many pairs', amount;
@@ -242,13 +246,13 @@ BEGIN
 		SELECT id_1, id_2
 			FROM (
 				SELECT ' || quote_ident(col_one) || ' AS id_1,
-				random_between(1,' || quote_nullable(tab_2_size) ||') AS rn
+				random_between(1,' || quote_nullable(random_1) ||') AS rn
 				FROM ' || quote_ident(tab_one) || ' 
 				ORDER BY random()
 			) x
 			JOIN (
 				SELECT ' || quote_ident(col_two) || ' AS id_2,
-				random_between(1,' || quote_nullable(tab_1_size) || ') AS rn
+				random_between(1,' || quote_nullable(random_2) || ') AS rn
 				FROM ' || quote_ident(tab_two) || '  
 				ORDER BY random()
 			) y USING (rn)
@@ -266,6 +270,40 @@ BEGIN
 --			ORDER BY random()
 --		) y USING (rn)
 --		LIMIT amount;
+END
+$$;
+
+
+
+CREATE OR REPLACE PROCEDURE generate_chains(
+	tab_name text, col_name text,
+	tab_target text, amount integer)
+-- не всегда получается нужное кол-во цепочек из-за рандома
+-- подумать, как это исправить и надо ли
+LANGUAGE 'plpgsql' AS 
+$$
+DECLARE tab_size integer;
+BEGIN 
+	EXECUTE 'SELECT count(*) FROM ' || quote_ident(tab_name)
+		INTO tab_size; 
+	IF amount > tab_size / 2
+	-- мб ужесточить условие
+		THEN RAISE EXCEPTION 
+		'Can not generate % chains', amount;
+	END IF;
+	EXECUTE 
+	'CREATE TABLE ' || quote_ident(tab_target) || ' AS 
+		SELECT id_1, id_2
+		FROM (
+			SELECT ' || quote_ident(col_name) || ' AS id_1,
+				lead(' || quote_ident(col_name) || ') 
+				OVER (PARTITION BY random_between(1,' 
+								|| quote_nullable(amount) ||')
+					ORDER BY random()) AS id_2
+			FROM ' || quote_ident(tab_name) || ' 
+			ORDER BY random() 
+			) AS p
+		WHERE id_2 IS NOT NULL';
 END
 $$;
 
