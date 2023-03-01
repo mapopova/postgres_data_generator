@@ -357,3 +357,32 @@ END
 $$;
 
 
+
+CREATE OR REPLACE PROCEDURE fill_table_from_catalog(
+	tab_name text, tab_target text, catalog_name text, column_name text)
+LANGUAGE 'plpgsql' AS 
+$$
+DECLARE catalog_size int;
+BEGIN 
+	EXECUTE format('SELECT count(*) FROM %I', catalog_name) 
+		INTO catalog_size;
+	EXECUTE 
+	'CREATE TABLE ' || quote_ident(tab_target) || ' AS 
+		SELECT *
+			FROM (
+				SELECT *,
+				random_between(1,' || quote_nullable(catalog_size) ||') AS rn
+				FROM ' || quote_ident(tab_name) || ' 
+				ORDER BY random()
+			) x
+			JOIN (
+				SELECT ' || quote_ident(column_name) || ',
+				row_number() OVER (ORDER BY random()) AS rn
+				FROM ' || quote_ident(catalog_name) || ' 
+			) y USING (rn)
+		ORDER BY random()';
+	EXECUTE 
+	'ALTER TABLE ' || quote_ident(tab_target) || ' DROP COLUMN rn';
+END
+$$;
+
