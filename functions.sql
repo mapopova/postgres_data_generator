@@ -309,6 +309,19 @@ $$;
 
 
 
+CREATE OR REPLACE FUNCTION random_string(str_length int) RETURNS TEXT
+-- понять, как работает функция, и почему иногда возвращает длину меньше заданной 
+-- (с пробелом на конце)
+
+-- сделать вариант с заглавными буквами, с русским языком, комбинации?
+LANGUAGE SQL AS 
+$$
+    SELECT string_agg(substring('0123456789bcdfghjkmnpqrstvwxyz', round(random() * 30)::integer, 1), '')
+    FROM generate_series(1, str_length);
+$$;
+
+
+
 CREATE OR REPLACE PROCEDURE fill_table_with_data(
 	id_tab_name text, tab_target text, column_types text[])
 LANGUAGE 'plpgsql' AS 
@@ -324,9 +337,13 @@ BEGIN
 --	RAISE NOTICE 't %', col_names;
 	FOREACH elem IN ARRAY column_types
 	LOOP
-		CASE elem
-			WHEN 'int' THEN query = query || ', random_between(1,2147483647) AS col_' || i;
-			WHEN 'text' THEN query = query || ', md5(random()::text) AS col_' || i;
+		CASE 
+			WHEN elem = 'int' THEN query = query || ', random_between(1,2147483647) AS col_' || i;
+			WHEN elem = 'text' THEN query = query || ', md5(random()::text) AS col_' || i;
+			WHEN elem LIKE 'text(%)' THEN 
+				elem = replace(elem,'text','random_string'); -- lol
+				query = query || ', ' || elem || ' AS col_' || i;
+				RAISE NOTICE 'm %', query;
 		END CASE;
 	i = i + 1;
 	END LOOP;
