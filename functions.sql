@@ -309,3 +309,34 @@ $$;
 
 
 
+CREATE OR REPLACE PROCEDURE fill_table_with_data(
+	id_tab_name text, tab_target text, column_types text[])
+LANGUAGE 'plpgsql' AS 
+$$
+--DECLARE col_names text[];
+DECLARE query TEXT = ''; i int = 1; elem TEXT;
+BEGIN 
+--	col_names := ARRAY( 
+--		SELECT column_name FROM information_schema.columns
+--		WHERE table_schema = 'public' AND table_name = id_tab_name
+--	);
+	-- поменять public
+--	RAISE NOTICE 't %', col_names;
+	FOREACH elem IN ARRAY column_types
+	LOOP
+		CASE elem
+			WHEN 'int' THEN query = query || ', random_between(1,2147483647) AS col_' || i;
+			WHEN 'text' THEN query = query || ', md5(random()::text) AS col_' || i;
+		END CASE;
+	i = i + 1;
+	END LOOP;
+	RAISE NOTICE 't %', query;
+	EXECUTE
+	'CREATE TABLE ' || quote_ident(tab_target) || ' AS 
+		SELECT *' ||
+			query  || 
+		' FROM ' || quote_ident(id_tab_name);
+END
+$$;
+
+
