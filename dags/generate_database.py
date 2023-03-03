@@ -19,7 +19,7 @@ with DAG(
     generate_relationships = PostgresOperator(
         task_id="generate_relationships",
         postgres_conn_id="postgres_local",
-        sql="sql/generate_relationships.sql"
+        sql="sql/gen_relationships.sql"
     )
     
     generate_ids >> generate_relationships

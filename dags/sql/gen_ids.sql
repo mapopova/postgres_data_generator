@@ -11,6 +11,6 @@ CALL generate_table_id_inc(
 DROP TABLE IF EXISTS payment_id;
 CALL generate_table_uuid(
 	tab_name=>'payment_id', col_name=>'check_number',
-	amount=>'5000');
+	amount=>1800);
 	
 	

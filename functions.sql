@@ -47,9 +47,9 @@ $$
 BEGIN 
 	EXECUTE format('
 	CREATE TABLE %I AS 
-		SELECT gen_random_uuid() 
-		FROM generate_series(1,%L) AS %I
-	', tab_name, amount, col_name);
+		SELECT gen_random_uuid() AS %I
+		FROM generate_series(1,%L)
+	', tab_name, col_name, amount);
 END
 $$;
 
@@ -280,6 +280,8 @@ CREATE OR REPLACE PROCEDURE generate_chains(
 	tab_target text, amount integer)
 -- не всегда получается нужное кол-во цепочек из-за рандома
 -- подумать, как это исправить и надо ли
+	
+-- мб как-то сделать длину цепочек неравномерной..?
 LANGUAGE 'plpgsql' AS 
 $$
 DECLARE tab_size integer;
@@ -362,6 +364,8 @@ CREATE OR REPLACE PROCEDURE fill_table_from_catalog(
 	tab_name text, tab_target text, catalog_name text, column_name text)
 LANGUAGE 'plpgsql' AS 
 $$
+-- to do несколько столбцов сразу?
+-- мб убрать удаление столбца в конце))
 DECLARE catalog_size int;
 BEGIN 
 	EXECUTE format('SELECT count(*) FROM %I', catalog_name) 
