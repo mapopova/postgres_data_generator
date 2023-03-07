@@ -95,7 +95,7 @@ $$;
 
 
 -- 1 : 0..N
-CREATE OR REPLACE PROCEDURE generate_one_to_many_pairs(
+CREATE OR REPLACE PROCEDURE generate_one_to_zero_or_many_pairs(
 	tab_one text, col_one text, tab_two text, col_two text,
 	tab_target text, amount integer)
 LANGUAGE 'plpgsql' AS 
@@ -130,21 +130,22 @@ $$;
 
 -- 1 : 1..N
 -- only for dim B > dim A (?)
-CREATE OR REPLACE PROCEDURE generate_one_to_many_pairs_v2(
+CREATE OR REPLACE PROCEDURE generate_one_to_one_or_many_pairs(
 	tab_one text, col_one text, tab_two text, col_two text,
 	tab_target text, amount integer)
--- НЕКОРРЕКТНО РАБОТАЕТ если задать amount меньше чем размер второй таблицы
--- надо перенести куда-то в последнем запросе LIMIT
 LANGUAGE 'plpgsql' AS 
 $$
-DECLARE tab_1_size integer; tab_2_size integer;
+DECLARE tab_1_size integer; tab_2_size integer; limit_n integer;
 BEGIN
 	EXECUTE 'SELECT count(*) FROM ' || quote_ident(tab_one) 
 		INTO tab_1_size;
 	EXECUTE 'SELECT count(*) FROM ' || quote_ident(tab_two) 
 		INTO tab_2_size;
-	-- to do check amount = ?
-	-- to do check dim B > dim A
+	limit_n = amount - tab_1_size;
+	IF tab_2_size < tab_1_size OR amount < tab_1_size OR amount > tab_2_size
+		THEN RAISE EXCEPTION 
+		'Can not generate % unique one to (one or many) pairs', amount;
+	END IF;
 	EXECUTE 
 	'CREATE TABLE ' || quote_ident(tab_target) || ' AS 
 
@@ -182,9 +183,8 @@ BEGIN
 
 		(SELECT ' || quote_ident(col_one) || ', ' || quote_ident(col_two) || '
 		FROM tab2
-		WHERE ' || quote_ident(col_two) || ' NOT IN (SELECT ' || quote_ident(col_two) || ' FROM tab1))
-
-		LIMIT ' || quote_nullable(amount);
+		WHERE ' || quote_ident(col_two) || ' NOT IN (SELECT ' || quote_ident(col_two) || ' FROM tab1)
+		LIMIT ' || quote_nullable(limit_n) || ')';
 END
 $$;
 
