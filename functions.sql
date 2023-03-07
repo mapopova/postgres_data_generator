@@ -18,10 +18,20 @@ CREATE OR REPLACE FUNCTION random_between(low integer, high integer)
 LANGUAGE 'plpgsql' AS
 $$
 BEGIN
-   RETURN floor(random()* (high-low + 1) + low);
+   RETURN floor(random() * (high-low + 1) + low);
 END;
 $$;
 
+
+
+CREATE OR REPLACE FUNCTION random_double_between(low integer DEFAULT 0, high integer DEFAULT 2147483647) 
+   RETURNS double precision
+LANGUAGE 'plpgsql' AS
+$$
+BEGIN
+   RETURN random() * (high - low) + low;
+END;
+$$;
 
 
 CREATE OR REPLACE PROCEDURE generate_table_uuid(
@@ -235,7 +245,6 @@ CREATE OR REPLACE PROCEDURE generate_chains(
 	tab_target text, amount integer)
 -- не всегда получается нужное кол-во цепочек из-за рандома
 -- подумать, как это исправить и надо ли
-	
 -- мб как-то сделать длину цепочек неравномерной..?
 LANGUAGE 'plpgsql' AS 
 $$
@@ -266,14 +275,34 @@ $$;
 
 
 
-CREATE OR REPLACE FUNCTION random_string(str_length int) RETURNS TEXT
--- понять, как работает функция, и почему иногда возвращает длину меньше заданной 
--- (с пробелом на конце)
-
--- сделать вариант с заглавными буквами, с русским языком, комбинации?
+CREATE OR REPLACE FUNCTION random_string_md5(str_length int) RETURNS TEXT
 LANGUAGE SQL AS 
-$$
-    SELECT string_agg(substring('0123456789bcdfghjkmnpqrstvwxyz', round(random() * 30)::integer, 1), '')
+$$ 
+  SELECT
+    substring(
+      (SELECT string_agg(md5(random()::TEXT), '')
+       FROM generate_series(1, CEIL($1 / 32.)::integer)), 1, $1);
+$$;
+
+
+
+CREATE OR REPLACE FUNCTION random_string_2(low int DEFAULT 1, high int DEFAULT 100) RETURNS TEXT
+LANGUAGE SQL AS 
+-- понять, почему иногда возвращает длину меньше заданной 
+-- сделать вариант с заглавными буквами, с русским языком?
+$$	
+    SELECT string_agg(substring('0123456789abcdefghijklmnopqrstuvwxyz', round(random() * 36)::integer, 1), '')
+    FROM generate_series(1, random_between(low, high));
+$$;
+
+
+
+CREATE OR REPLACE FUNCTION random_string(str_length int) RETURNS TEXT
+LANGUAGE SQL AS 
+-- понять, почему иногда возвращает длину меньше заданной 
+-- сделать вариант с заглавными буквами, с русским языком?
+$$	
+    SELECT string_agg(substring('0123456789abcdefghijklmnopqrstuvwxyz', round(random() * 36)::integer, 1), '')
     FROM generate_series(1, str_length);
 $$;
 
@@ -304,8 +333,15 @@ BEGIN
 			ELSE col_name = 'col_' || i;
 		END IF;
 		CASE 
-			WHEN elem = 'int' THEN query = query || ', random_between(1,2147483647) AS ' || col_name; --col_' || i;
-			WHEN elem = 'text' THEN query = query || ', md5(random()::text) AS ' || col_name;
+			WHEN elem = 'int' THEN query = query || ', random_between(0,2147483646) AS ' || col_name;
+			WHEN elem LIKE 'int(%)' THEN
+				elem = replace(elem,'int','random_between');
+				query = query || ', ' || elem || ' AS ' || col_name;
+			WHEN elem = 'text' THEN --query = query || ', md5(random()::text) AS ' || col_name;
+				query = query || ', random_string_2() AS ' || col_name;
+			WHEN elem LIKE 'text(%,%)' THEN
+				elem = replace(elem,'text','random_string_2');
+				query = query || ', ' || elem || ' AS ' || col_name;
 			WHEN elem LIKE 'text(%)' THEN 
 				elem = replace(elem,'text','random_string'); -- lol
 				query = query || ', ' || elem || ' AS ' || col_name;
@@ -313,6 +349,7 @@ BEGIN
 			WHEN elem LIKE 'date(%)' THEN
 				elem = regexp_replace(elem,'date','random_date');
 				query = query || ', ' || elem || ' AS ' || col_name;
+			WHEN elem = 'double' THEN query = query || ', random_double_between() AS ' || col_name;
 		END CASE;
 	i = i + 1;
 	END LOOP;

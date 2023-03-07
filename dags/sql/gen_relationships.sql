@@ -1,5 +1,5 @@
 DROP TABLE IF EXISTS order_customer;
-CALL generate_one_to_many_pairs(
+CALL generate_one_to_zero_or_many_pairs(
 	tab_one=>'customer_id', col_one=>'customer_id', 
 	tab_two=>'order_id', col_two=>'order_id',
 	tab_target=>'order_customer', amount=>10000); 

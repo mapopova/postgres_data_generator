@@ -25,7 +25,16 @@ with DAG(
     
     generate_catalogs = BashOperator(
     	task_id="generate_catalogs",
-    	bash_command="~/pgfutter csv ~/projects/postgres_data_generator/states.csv"
+    	bash_command='''~/pgfutter --pw 'postgres' --schema 'public' csv ~/projects/postgres_data_generator/states.csv
+'''
+    )
+    
+    fill_with_data = PostgresOperator(
+        task_id="fill_with_data",
+        postgres_conn_id="postgres_local",
+        sql="sql/fill_with_data.sql"
     )
     
     generate_ids >> generate_relationships
+    generate_relationships >> fill_with_data
+    generate_catalogs >> fill_with_data
