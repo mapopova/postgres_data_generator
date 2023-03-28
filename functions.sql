@@ -23,6 +23,17 @@ END;
 $$;
 
 
+-- мб объединить/отнаследовать как-то от random_between(low integer, high integer)
+CREATE OR REPLACE FUNCTION random_bigint_between(low bigint DEFAULT 0, high bigint DEFAULT 9223372036854775806) 
+   RETURNS bigint
+LANGUAGE 'plpgsql' AS
+$$
+BEGIN
+   RETURN floor(random() * (high-low + 1) + low);
+END;
+$$;
+
+
 
 CREATE OR REPLACE FUNCTION random_double_between(low integer DEFAULT 0, high integer DEFAULT 2147483647) 
    RETURNS double precision
@@ -32,6 +43,18 @@ BEGIN
    RETURN random() * (high - low) + low;
 END;
 $$;
+
+
+
+CREATE OR REPLACE FUNCTION random_real_between(low integer DEFAULT 0, high integer DEFAULT 2147483647) 
+   RETURNS real
+LANGUAGE 'plpgsql' AS
+$$
+BEGIN
+   RETURN random() * (high - low) + low;
+END;
+$$;
+
 
 
 CREATE OR REPLACE PROCEDURE generate_table_uuid(
@@ -100,11 +123,14 @@ BEGIN
 			FROM ' || quote_ident(tab_two) || '
 		) AS y USING (rn)
 		LIMIT ' || quote_nullable(amount);
+	
 END
 $$;
 
 
 -- 1 : 0..N
+-- 1 optional to many optional if amount < dim B
+-- 1 mandatory to many optional if amount = dim B
 CREATE OR REPLACE PROCEDURE generate_one_to_zero_or_many_pairs(
 	tab_one text, col_one text, tab_two text, col_two text,
 	tab_target text, amount integer)
@@ -140,6 +166,8 @@ $$;
 
 -- 1 : 1..N
 -- only for dim B > dim A (?)
+-- 1 optional to many mandatory if amount < dim B
+-- 1 mandatory to many mandatory if amount = dim B
 CREATE OR REPLACE PROCEDURE generate_one_to_one_or_many_pairs(
 	tab_one text, col_one text, tab_two text, col_two text,
 	tab_target text, amount integer)
@@ -194,6 +222,85 @@ BEGIN
 		(SELECT ' || quote_ident(col_one) || ', ' || quote_ident(col_two) || '
 		FROM tab2
 		WHERE ' || quote_ident(col_two) || ' NOT IN (SELECT ' || quote_ident(col_two) || ' FROM tab1)
+		LIMIT ' || quote_nullable(limit_n) || ')';
+END
+$$;
+
+
+
+CREATE OR REPLACE PROCEDURE generate_one_to_many_mandatory_pairs(
+	tab_one text, col_one text, tab_two text, col_two text,
+	tab_target text, amount integer)
+LANGUAGE 'plpgsql' AS 
+$$
+DECLARE tab_1_size integer; tab_2_size integer; limit_n integer;
+BEGIN
+	EXECUTE 'SELECT count(*) FROM ' || quote_ident(tab_one) 
+		INTO tab_1_size;
+	EXECUTE 'SELECT count(*) FROM ' || quote_ident(tab_two) 
+		INTO tab_2_size;
+	limit_n = amount - tab_1_size;
+	IF tab_2_size < tab_1_size OR amount < tab_1_size OR amount > tab_2_size
+		THEN RAISE EXCEPTION 
+		'Can not generate % unique one to (one or many) pairs', amount;
+	END IF;
+	EXECUTE 
+	'CREATE TABLE ' || quote_ident(tab_target) || ' AS 
+
+		WITH tab1 AS
+		(SELECT ' || quote_ident(col_one) || ', ' || quote_ident(col_two) || ' 
+		FROM (
+	   		SELECT ' || quote_ident(col_one) || ', 
+				row_number() OVER (ORDER BY random()) AS rn
+	   		FROM ' || quote_ident(tab_one) || '
+	   	) AS x
+		JOIN (
+			SELECT ' || quote_ident(col_two) || ', 
+				row_number() OVER (ORDER BY random()) AS rn
+			FROM ' || quote_ident(tab_two) || '
+		) AS y USING (rn)),
+
+		tab3 AS
+		(SELECT ' || quote_ident(col_one) || ', ' || quote_ident(col_two) || ' 
+		FROM (
+	   		SELECT ' || quote_ident(col_one) || ', 
+				row_number() OVER (ORDER BY random()) AS rn
+	   		FROM ' || quote_ident(tab_one) || '
+	   	) AS x
+		JOIN (
+			SELECT ' || quote_ident(col_two) || ', 
+				row_number() OVER (ORDER BY random()) AS rn
+			FROM ' || quote_ident(tab_two) || '
+		) AS y USING (rn)),
+
+		tab2 AS 
+		(SELECT ' || quote_ident(col_one) || ', ' || quote_ident(col_two) || '
+		FROM (
+			SELECT ' || quote_ident(col_one) || ',
+ 				row_number() OVER (ORDER BY random()) AS rn
+			FROM ' || quote_ident(tab_one) || '
+		) x
+		JOIN (
+			SELECT ' || quote_ident(col_two) || ', 
+				random_between(1,' || quote_nullable(tab_1_size) ||') rn
+			FROM ' || quote_ident(tab_two) || ' 
+			ORDER BY random()
+		) y USING (rn))
+
+		(SELECT ' || quote_ident(col_one) || ', ' || quote_ident(col_two) || '
+		FROM tab1)
+
+		UNION 
+
+		(SELECT ' || quote_ident(col_one) || ', ' || quote_ident(col_two) || '
+		FROM tab3)
+
+		UNION
+
+		(SELECT ' || quote_ident(col_one) || ', ' || quote_ident(col_two) || '
+		FROM tab2
+		WHERE ' || quote_ident(col_two) || ' NOT IN (SELECT ' || quote_ident(col_two) || ' FROM tab1) AND '
+		|| quote_ident(col_two) || ' NOT IN (SELECT ' || quote_ident(col_two) || ' FROM tab3)
 		LIMIT ' || quote_nullable(limit_n) || ')';
 END
 $$;
@@ -268,8 +375,40 @@ BEGIN
 					ORDER BY random()) AS id_2
 			FROM ' || quote_ident(tab_name) || ' 
 			ORDER BY random() 
-			) AS p
-		WHERE id_2 IS NOT NULL';
+			) AS p';
+		--WHERE id_2 IS NOT NULL'; -- можно убрать
+END
+$$;
+
+
+
+CREATE OR REPLACE PROCEDURE generate_chains_v2(
+	tab_name text, col_name text,
+	tab_target text, amount integer)
+LANGUAGE 'plpgsql' AS 
+$$
+DECLARE tab_size integer;
+BEGIN 
+	EXECUTE 'SELECT count(*) FROM ' || quote_ident(tab_name)
+		INTO tab_size; 
+	IF amount > tab_size / 2
+	-- мб ужесточить условие
+		THEN RAISE EXCEPTION 
+		'Can not generate % chains', amount;
+	END IF;
+	EXECUTE 
+	'CREATE TABLE ' || quote_ident(tab_target) || ' AS 
+		SELECT id_1, id_2
+		FROM (
+			SELECT ' || quote_ident(col_name) || ' AS id_1,
+				lead(' || quote_ident(col_name) || ') 
+				OVER (PARTITION BY random_between(1, random_between(1, ' 
+								|| quote_nullable(amount) ||'))
+					ORDER BY random()) AS id_2
+			FROM ' || quote_ident(tab_name) || ' 
+			ORDER BY random() 
+			) AS p';
+--		WHERE id_2 IS NOT NULL';
 END
 $$;
 
@@ -319,8 +458,82 @@ $$;
 
 
 
+CREATE OR REPLACE FUNCTION random_timestamp(low timestamp DEFAULT '01-01-01 00:00:00', --'4714-11-24 BC 00:00:00'
+											high timestamp DEFAULT '294276-12-31 00:00:00') --'294276-12-31 00:00:00'
+   RETURNS timestamp
+LANGUAGE 'plpgsql' AS
+$$
+BEGIN
+--	RETURN low::timestamp + random_between(0,(high::timestamp - low::timestamp));
+	RETURN low::timestamp + random() * (high::timestamp - low::timestamp);
+END;
+$$;
+
+
+
+--CREATE OR REPLACE PROCEDURE fill_table_with_data_old(
+--	id_tab_name text, tab_target text, column_types text[], column_names text[] DEFAULT array[]::text[])
+--LANGUAGE 'plpgsql' AS 
+--$$
+--DECLARE query TEXT = ''; i int = 1; elem TEXT; col_name TEXT; colnames_length int;
+--BEGIN
+--	colnames_length = COALESCE(array_length(column_names, 1),0);
+--	FOREACH elem IN ARRAY column_types
+--	LOOP
+--		IF i <= colnames_length 
+--			THEN col_name = quote_ident(column_names[i]); --RAISE NOTICE 'col_name: %', col_name;
+--			ELSE col_name = 'col_' || i;
+--		END IF;
+--		CASE 
+--			WHEN elem = 'int' THEN 
+--				elem = 'random_between(0,2147483646)';
+--			-- поменять чтоб отрицательные попадали
+--			WHEN elem LIKE 'int(%)' THEN
+--				elem = replace(elem,'int','random_between');
+--			WHEN elem = 'bigint' THEN
+--				elem = 'random_bigint_between()';
+--			WHEN elem LIKE 'bigint(%)' THEN
+--				elem = replace(elem,'bigint','random_bigint_between');
+--			WHEN elem = 'text' THEN --query = query || ', md5(random()::text) AS ' || col_name;
+--				elem = 'random_string_2()';
+--			WHEN elem LIKE 'text(%,%)' THEN
+--				elem = replace(elem,'text','random_string_2');
+--			WHEN elem LIKE 'text(%)' THEN 
+--				elem = replace(elem,'text','random_string_md5'); -- lol
+--			WHEN elem = 'date' THEN 
+--				elem = 'random_date()';
+--			WHEN elem LIKE 'date(%)' THEN
+--				elem = regexp_replace(elem,'date','random_date');
+--			WHEN elem = 'double' THEN 
+--				elem = 'random_double_between()';
+--			WHEN elem LIKE 'double(%)' THEN
+--				elem = replace(elem,'double','random_double_between');
+--			WHEN elem = 'real' THEN 
+--				elem = 'random_real_between()';
+--			WHEN elem LIKE 'real(%)' THEN
+--				elem = replace(elem,'real','random_real_between');
+--			WHEN elem = 'timestamp' THEN 
+--				elem = 'random_timestamp()';
+--			WHEN elem LIKE 'timestamp(%)' THEN
+--				elem = regexp_replace(elem,'timestamp','random_timestamp');
+--		END CASE;
+--		query = query || ', ' || elem || ' AS ' || col_name;
+--		i = i + 1;
+--	END LOOP;
+--	RAISE NOTICE 'query: %', query;
+--	EXECUTE
+--	'CREATE TABLE ' || quote_ident(tab_target) || ' AS 
+--		SELECT *' ||
+--			query  || 
+--		' FROM ' || quote_ident(id_tab_name);
+--END
+--$$;
+
+
+
 CREATE OR REPLACE PROCEDURE fill_table_with_data(
-	id_tab_name text, tab_target text, column_types text[], column_names text[] DEFAULT array[]::text[])
+	id_tab_name text, tab_target text, column_types text[], column_names text[] DEFAULT array[]::text[],
+	delete_source bool DEFAULT FALSE)
 LANGUAGE 'plpgsql' AS 
 $$
 DECLARE query TEXT = ''; i int = 1; elem TEXT; col_name TEXT; colnames_length int;
@@ -333,25 +546,15 @@ BEGIN
 			ELSE col_name = 'col_' || i;
 		END IF;
 		CASE 
-			WHEN elem = 'int' THEN query = query || ', random_between(0,2147483646) AS ' || col_name;
-			WHEN elem LIKE 'int(%)' THEN
-				elem = replace(elem,'int','random_between');
-				query = query || ', ' || elem || ' AS ' || col_name;
-			WHEN elem = 'text' THEN --query = query || ', md5(random()::text) AS ' || col_name;
-				query = query || ', random_string_2() AS ' || col_name;
-			WHEN elem LIKE 'text(%,%)' THEN
-				elem = replace(elem,'text','random_string_2');
-				query = query || ', ' || elem || ' AS ' || col_name;
-			WHEN elem LIKE 'text(%)' THEN 
-				elem = replace(elem,'text','random_string'); -- lol
-				query = query || ', ' || elem || ' AS ' || col_name;
-			WHEN elem = 'date' THEN query = query || ', random_date() AS ' || col_name;
-			WHEN elem LIKE 'date(%)' THEN
-				elem = regexp_replace(elem,'date','random_date');
-				query = query || ', ' || elem || ' AS ' || col_name;
-			WHEN elem = 'double' THEN query = query || ', random_double_between() AS ' || col_name;
+			WHEN elem LIKE 'const%' THEN
+				elem = elem; 
+			WHEN elem LIKE '%(%)' THEN 
+				elem = 'random_' || elem;
+			ELSE
+				elem = 'random_' || elem || '()';
 		END CASE;
-	i = i + 1;
+		query = query || ', ' || elem || ' AS ' || col_name;
+		i = i + 1;
 	END LOOP;
 	RAISE NOTICE 'query: %', query;
 	EXECUTE
@@ -359,12 +562,15 @@ BEGIN
 		SELECT *' ||
 			query  || 
 		' FROM ' || quote_ident(id_tab_name);
+	IF delete_source IS TRUE THEN 
+		EXECUTE 'DROP TABLE ' || quote_ident(id_tab_name);
+	END IF ;
 END
 $$;
 
 
 
-CREATE OR REPLACE PROCEDURE fill_table_from_catalog(
+CREATE OR REPLACE PROCEDURE fill_table_from_dict(
 	tab_name text, tab_target text, catalog_name text, column_names text[])
 LANGUAGE 'plpgsql' AS 
 $$
