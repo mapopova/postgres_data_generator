@@ -309,10 +309,10 @@ $$;
 
 CREATE OR REPLACE PROCEDURE generate_many_to_many_pairs(
 	tab_one text, col_one text, tab_two text, col_two text,
-	tab_target text, random_1 integer, random_2 integer, amount integer)
+	tab_target text, amount integer)  --random_1 integer, random_2 integer, 
 LANGUAGE 'plpgsql' AS 
 $$
-DECLARE --random_1 integer; random_2 integer;
+DECLARE random_1 integer; random_2 integer;
 		tab_1_size integer; tab_2_size integer;
 BEGIN
 --	random_1 = 1000;
@@ -321,6 +321,8 @@ BEGIN
 		INTO tab_1_size;
 	EXECUTE format('SELECT count(*) FROM %I', tab_two) 
 		INTO tab_2_size;
+	random_1 = tab_2_size;
+	random_2 = tab_1_size;
 --	 check that amount <= count(tab2)*count(tab1) 
 	IF amount > tab_2_size * tab_1_size
 		THEN RAISE EXCEPTION 
@@ -471,66 +473,6 @@ $$;
 
 
 
---CREATE OR REPLACE PROCEDURE fill_table_with_data_old(
---	id_tab_name text, tab_target text, column_types text[], column_names text[] DEFAULT array[]::text[])
---LANGUAGE 'plpgsql' AS 
---$$
---DECLARE query TEXT = ''; i int = 1; elem TEXT; col_name TEXT; colnames_length int;
---BEGIN
---	colnames_length = COALESCE(array_length(column_names, 1),0);
---	FOREACH elem IN ARRAY column_types
---	LOOP
---		IF i <= colnames_length 
---			THEN col_name = quote_ident(column_names[i]); --RAISE NOTICE 'col_name: %', col_name;
---			ELSE col_name = 'col_' || i;
---		END IF;
---		CASE 
---			WHEN elem = 'int' THEN 
---				elem = 'random_between(0,2147483646)';
---			-- поменять чтоб отрицательные попадали
---			WHEN elem LIKE 'int(%)' THEN
---				elem = replace(elem,'int','random_between');
---			WHEN elem = 'bigint' THEN
---				elem = 'random_bigint_between()';
---			WHEN elem LIKE 'bigint(%)' THEN
---				elem = replace(elem,'bigint','random_bigint_between');
---			WHEN elem = 'text' THEN --query = query || ', md5(random()::text) AS ' || col_name;
---				elem = 'random_string_2()';
---			WHEN elem LIKE 'text(%,%)' THEN
---				elem = replace(elem,'text','random_string_2');
---			WHEN elem LIKE 'text(%)' THEN 
---				elem = replace(elem,'text','random_string_md5'); -- lol
---			WHEN elem = 'date' THEN 
---				elem = 'random_date()';
---			WHEN elem LIKE 'date(%)' THEN
---				elem = regexp_replace(elem,'date','random_date');
---			WHEN elem = 'double' THEN 
---				elem = 'random_double_between()';
---			WHEN elem LIKE 'double(%)' THEN
---				elem = replace(elem,'double','random_double_between');
---			WHEN elem = 'real' THEN 
---				elem = 'random_real_between()';
---			WHEN elem LIKE 'real(%)' THEN
---				elem = replace(elem,'real','random_real_between');
---			WHEN elem = 'timestamp' THEN 
---				elem = 'random_timestamp()';
---			WHEN elem LIKE 'timestamp(%)' THEN
---				elem = regexp_replace(elem,'timestamp','random_timestamp');
---		END CASE;
---		query = query || ', ' || elem || ' AS ' || col_name;
---		i = i + 1;
---	END LOOP;
---	RAISE NOTICE 'query: %', query;
---	EXECUTE
---	'CREATE TABLE ' || quote_ident(tab_target) || ' AS 
---		SELECT *' ||
---			query  || 
---		' FROM ' || quote_ident(id_tab_name);
---END
---$$;
-
-
-
 CREATE OR REPLACE PROCEDURE fill_table_with_data(
 	id_tab_name text, tab_target text, column_types text[], column_names text[] DEFAULT array[]::text[],
 	delete_source bool DEFAULT FALSE)
@@ -545,8 +487,8 @@ BEGIN
 			THEN col_name = quote_ident(column_names[i]); --RAISE NOTICE 'col_name: %', col_name;
 			ELSE col_name = 'col_' || i;
 		END IF;
-		CASE 
-			WHEN elem LIKE 'const%' THEN
+		CASE
+			WHEN elem LIKE 'const%' OR elem = 'NULL' THEN
 				elem = elem; 
 			WHEN elem LIKE '%(%)' THEN 
 				elem = 'random_' || elem;
